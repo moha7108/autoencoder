@@ -92,8 +92,7 @@ def test(dataloader, model, loss_fn):
 
 def plot_results(num_samples = 9):
 
-    plt.figure()
-    plt.subplot(2,9)
+    pass
 
 
 
@@ -137,13 +136,42 @@ if __name__ == '__main__':
 
     #### Training Loop
 
-    num_epochs = 15
+    num_epochs = 5
 
     results=[]
 
     for epoch in range(num_epochs):
-        print( f'Epoch{epoch+1}\n-----------------------------')
+        print( f'Epoch {epoch+1}\n-----------------------------')
         train(train_data_loader, model, loss_fn, optimizer)
-        results.append(test(test_data_loader, model, loss_fn))
+        img, recon = test(test_data_loader, model, loss_fn)
+        results.append((epoch,img,recon))
+
+    ### Plot Results
+
+    figure = []
+    for k in range(0,num_epochs):
+
+        figure.append((k,plt.figure()))
+        plt.gray()
+
+        imgs = results[k][1].reshape([-1,28,28])
+        recons = results[k][2].reshape([-1,28,28])
+
+        imgs = imgs.cpu().detach().numpy()
+        recons = recons.cpu().detach().numpy()
+
+        for i, item in enumerate(imgs):
+            if i >= 9: break
+            plt.subplot(2,9,i+1)
+            plt.imshow(item)
+
+        for i, item in enumerate(recons):
+            if i>=9:break
+            plt.subplot(2,9,9+i+1)
+            plt.imshow(item)
+
+
+    plt.show()
+
 
     print('done')
