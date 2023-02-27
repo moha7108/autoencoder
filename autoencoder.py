@@ -8,7 +8,7 @@ from torch import nn
 import matplotlib.pyplot as plt
 from torchvision import datasets, transforms
 
-
+data_dir = './data/'
 device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 n = 28 # pixel nxn
 N = n*n
@@ -51,39 +51,53 @@ class Autoencoder(nn.Module):
 
 
 
-    def save_weights(self, path = './data/'):
+    def save_model(self, optimizer, epoch, loss=0.4, path= f'./data/checkoint.pth'):
         '''This method saves the model parameters to a .pth file given a file path'''
-        ts = datetime.datetime.now().strftime(str_format)
 
-        filepath = f'{path}{ts}-{self.name}_model_weights.pth'
+        torch.save({
+                     'epoch': epoch,
+                     'model_state_dict': self.state_dict(),
+                     'optimizer_state_dict': optimizer.state_dict(),
+                     'loss':loss
+        }, path)
 
-        torch.save(self.state_dict(), filepath)
-
-        return filepath
-
-
-def train(dataloader, model, loss_fn, optimizer):
-    size = len(dataloader.dataset)
+        return path
 
 
-    model.train()
+    def load_model(self, loss_fn, optimizer,  path):
+        '''This method loads the model parameters to a .pth file given a file path'''
 
-    for batch, (X,_) in enumerate(dataloader):
-        X=X.reshape([-1,N])
-        X = X.to(device)
+        checkpoint = torch.load(path)
 
-        #Inference
-        out = model(X)
-        loss = loss_fn(out, X)
+        self.load_state_dict(checkoint['model_state_dict'])
 
-        #Backpropagation
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-        if batch % 100 == 0:
-            loss, current = loss.item(), (batch +1)*len(X)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+
+    def train(self, dataloader, loss_fn, optimizer):
+
+        size = len(dataloader.dataset)
+
+
+        self.train()
+
+        for batch, (X,_) in enumerate(dataloader):
+            X=X.reshape([-1,N])
+            X = X.to(device)
+
+            #Inference
+            out = model(X)
+            loss = loss_fn(out, X)
+
+            #Backpropagation
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            if batch % 100 == 0:
+                loss, current = loss.item(), (batch +1)*len(X)
+                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+
 
 def test(dataloader, model, loss_fn):
     size = len(dataloader.dataset)
@@ -145,8 +159,13 @@ if __name__ == '__main__':
     #### Model
 
     model = Autoencoder().to(device)
+    # model = torch.load('./data/20230227150927-autoencoder_model_weights.pth')
+    # model.to(device)
     loss_fn = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr =.001, weight_decay =.00001 )
+
+
+    # model.load_weights('./data/20230227141826-autoencoder_model_weights.pth')
 
 
     #### Training Loop
@@ -161,7 +180,10 @@ if __name__ == '__main__':
         img, recon = test(test_data_loader, model, loss_fn)
         results.append((epoch,img,recon))
 
-    model.save_weights()
+    ts = datetime.datetime.now().strftime(str_format)
+    filepath = f'{data_dir}{ts}-{model.name}_checkpoint.pth'
+
+    model.save_model(epoch=num_epochs, optimizer=optimizer, path=filepath)
 
     ### Plot Results
 
