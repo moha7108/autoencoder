@@ -1,17 +1,24 @@
+import time, datetime
+str_format = '%Y%m%d%H%M%S'
+readable_format = '%Y/%m/%d %H:%M:%S'
+
 import numpy
 import torch
 from torch import nn
 import matplotlib.pyplot as plt
 from torchvision import datasets, transforms
 
+
 device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 n = 28 # pixel nxn
 N = n*n
 
 class Autoencoder(nn.Module):
-    def __init__(self):
+    def __init__(self, name='autoencoder'):
         #nxn,N 28x28, 784
         super().__init__()
+
+        self.name = name
 
         self.encoder = nn.Sequential(
                                       nn.Linear(N, 128), # N=784 --> 128
@@ -38,14 +45,22 @@ class Autoencoder(nn.Module):
     def forward(self, x):
 
         x = self.encoder(x)
-        # print(x.size())
-
         x = self.decoder(x)
-        # print(x.size())
-        # x = self.unflatten(x)
-        # print(x.size())
 
         return x
+
+
+
+    def save_weights(self, path = './data/'):
+        '''This method saves the model parameters to a .pth file given a file path'''
+        ts = datetime.datetime.now().strftime(str_format)
+
+        filepath = f'{path}{ts}-{self.name}_model_weights.pth'
+
+        torch.save(self.state_dict(), filepath)
+
+        return filepath
+
 
 def train(dataloader, model, loss_fn, optimizer):
     size = len(dataloader.dataset)
@@ -145,6 +160,8 @@ if __name__ == '__main__':
         train(train_data_loader, model, loss_fn, optimizer)
         img, recon = test(test_data_loader, model, loss_fn)
         results.append((epoch,img,recon))
+
+    model.save_weights()
 
     ### Plot Results
 
