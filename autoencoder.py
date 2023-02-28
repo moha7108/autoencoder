@@ -13,12 +13,22 @@ device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is
 n = 28 # pixel nxn
 N = n*n
 
+
+
+def default_func(X,Y):
+    X=X.reshape([-1,N])
+
+    label = X
+    return X,label
+
+
 class Autoencoder(nn.Module):
-    def __init__(self, name='autoencoder'):
+    def __init__(self, name='autoencoder', epoch = 0):
         #nxn,N 28x28, 784
         super().__init__()
 
         self.name = name
+        self.epoch  = epoch
 
         self.encoder = nn.Sequential(
                                       nn.Linear(N, 128), # N=784 --> 128
@@ -51,16 +61,16 @@ class Autoencoder(nn.Module):
 
 
 
-    def save_model(self, epoch, optimizer=None, loss=None, path= f'./data/checkoint.pth'):
+    def save_model(self, epoch=None, optimizer=None, path= f'./data/checkoint.pth'):
         '''This method saves the model parameters to a .pth file given a file path'''
 
         self.optimizer = optimizer if optimizer else self.optimizer
+        self.epoch = epoch if epoch else self.epoch
 
         torch.save({
-                     'epoch': epoch,
+                     'epoch': self.epoch,
                      'model_state_dict': self.state_dict(),
                      'optimizer_state_dict': self.optimizer.state_dict(),
-                     'loss':loss
         }, path)
 
         return path
@@ -78,9 +88,10 @@ class Autoencoder(nn.Module):
 
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.epoch = checkpoint['epoch']
-        self.loss = checkpoint['loss']
 
-    def train_step(self, dataloader, loss_fn=None, optimizer=None):
+        return self
+
+    def train_step(self, dataloader,func = default_func, loss_fn=None, optimizer=None):
 
         self.loss_fn = loss_fn if loss_fn else self.loss_fn
         self.optimizer = optimizer if optimizer else self.optimizer
@@ -89,13 +100,18 @@ class Autoencoder(nn.Module):
         ###### POTENTIAL DECORATOR FUNCTION
         self.train()
 
-        for batch, (X,_) in enumerate(dataloader):
-            X=X.reshape([-1,N])
+        self.epoch += 1
+
+        for batch, (X,Y) in enumerate(dataloader):
+
             X = X.to(device)
+
+            X, label = func(X,Y)  #insert data transformation function and label configuration
 
             #Inference
             out = self(X)
-            loss = self.loss_fn(out, X)
+
+            loss = self.loss_fn(out, label)
 
             #Backpropagation
             self.optimizer.zero_grad()
@@ -107,7 +123,7 @@ class Autoencoder(nn.Module):
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
 
-    def test_step(self, dataloader, loss_fn =None):
+    def test_step(self, dataloader, func = default_func, loss_fn =None):
         self.loss_fn = loss_fn if loss_fn else self.loss_fn
 
         size = len(dataloader.dataset)
@@ -117,12 +133,13 @@ class Autoencoder(nn.Module):
 
         ###### POTENTIAL DECORATOR FUNCTION
         with torch.no_grad():
-            for X, _ in dataloader:
-                X=X.reshape([-1,N])
-
+            for X, Y in dataloader:
                 X = X.to(device)
+
+                X, label = func(X,Y) #insert data transformation function and label configuration
+                # inference
                 out = self(X)
-                test_loss += self.loss_fn(out, X).item()
+                test_loss += self.loss_fn(out, label).item()
 
             test_loss /= num_batches
             print(f"Test Error: \nAvg loss: {test_loss:>8f} \n")
@@ -130,30 +147,21 @@ class Autoencoder(nn.Module):
         return X, out
 
 
-    def train_model(self, train_data_loader, test_data_loader, num_epochs = 5):
+    def train_model(self, train_data_loader, test_data_loader, num_epochs = 5, data_label_func = default_func):
 
         results=[]
 
-        for epoch in range(num_epochs):
+        for epoch in range(self.epoch, self.epoch+num_epochs):
             print( f'Epoch {epoch+1}\n-----------------------------')
-            self.train_step(dataloader=train_data_loader)
-            img, recon = self.test_step(dataloader=test_data_loader)
+            self.train_step(dataloader=train_data_loader,func = data_label_func)
+            img, recon = self.test_step(dataloader=test_data_loader, func = data_label_func)
             results.append((epoch,img,recon))
 
         return results
 
 
-def plot_results(num_samples = 9):
-
-    pass
-
-
-
-
 
 if __name__ == '__main__':
-
-
     #### Import and Initialize Data
 
     print(f'Using {device} device')
@@ -174,45 +182,26 @@ if __name__ == '__main__':
     test_data_loader = torch.utils.data.DataLoader(dataset=testing_data, batch_size=64, shuffle=True)
 
 
-    # dataiter = iter(data_loader)
-    #
-    # images, labels = next(dataiter) # new syntax is next(iter)
-    #
-    # print(torch.min(images), torch.max(images))
-
     #### Model
 
     model = Autoencoder().to(device)
-    # model = torch.load('./data/20230227150927-autoencoder_model_weights.pth')
-    # model.to(device)
+
     loss_fn = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr =.001, weight_decay =.00001 )
 
 
-    model.load_model(loss_fn, optimizer,  path='./data/20230227211127-autoencoder_checkpoint.pth')
-
-
-    # model.load_weights('./data/20230227141826-autoencoder_model_weights.pth')
-
+    model.load_model(loss_fn, optimizer,  path='./data/20230227222800-autoencoder_checkpoint.pth')
 
     #### Training Loop
 
-    num_epochs = 2
-    #
-    # results=[]
-    #
-    # for epoch in range(num_epochs):
-    #     print( f'Epoch {epoch+1}\n-----------------------------')
-    #     model.train_step(dataloader=train_data_loader)
-    #     img, recon = model.test_step(dataloader=test_data_loader)
-    #     results.append((epoch,img,recon))
+    num_epochs = 3
 
-    results=model.train_model(train_data_loader, test_data_loader, num_epochs)
+    results = model.train_model(train_data_loader, test_data_loader, num_epochs)
 
     ts = datetime.datetime.now().strftime(str_format)
     filepath = f'{data_dir}{ts}-{model.name}_checkpoint.pth'
 
-    model.save_model(epoch=num_epochs, optimizer=optimizer, path=filepath)
+    model.save_model(optimizer=optimizer, path=filepath)
 
     ### Plot Results
 
