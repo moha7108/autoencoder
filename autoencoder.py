@@ -51,13 +51,15 @@ class Autoencoder(nn.Module):
 
 
 
-    def save_model(self, optimizer, epoch, loss=0.4, path= f'./data/checkoint.pth'):
+    def save_model(self, epoch, optimizer=None, loss=None, path= f'./data/checkoint.pth'):
         '''This method saves the model parameters to a .pth file given a file path'''
+
+        self.optimizer = optimizer if optimizer else self.optimizer
 
         torch.save({
                      'epoch': epoch,
                      'model_state_dict': self.state_dict(),
-                     'optimizer_state_dict': optimizer.state_dict(),
+                     'optimizer_state_dict': self.optimizer.state_dict(),
                      'loss':loss
         }, path)
 
@@ -67,18 +69,24 @@ class Autoencoder(nn.Module):
     def load_model(self, loss_fn, optimizer,  path):
         '''This method loads the model parameters to a .pth file given a file path'''
 
+        self.optimizer = optimizer
+        self.loss_fn = loss_fn
+
         checkpoint = torch.load(path)
 
-        self.load_state_dict(checkoint['model_state_dict'])
+        self.load_state_dict(checkpoint['model_state_dict'])
 
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.epoch = checkpoint['epoch']
+        self.loss = checkpoint['loss']
 
+    def train_step(self, dataloader, loss_fn=None, optimizer=None):
 
-    def train(self, dataloader, loss_fn, optimizer):
+        self.loss_fn = loss_fn if loss_fn else self.loss_fn
+        self.optimizer = optimizer if optimizer else self.optimizer
 
         size = len(dataloader.dataset)
-
-
+        ###### POTENTIAL DECORATOR FUNCTION
         self.train()
 
         for batch, (X,_) in enumerate(dataloader):
@@ -86,37 +94,53 @@ class Autoencoder(nn.Module):
             X = X.to(device)
 
             #Inference
-            out = model(X)
-            loss = loss_fn(out, X)
+            out = self(X)
+            loss = self.loss_fn(out, X)
 
             #Backpropagation
-            optimizer.zero_grad()
+            self.optimizer.zero_grad()
             loss.backward()
-            optimizer.step()
+            self.optimizer.step()
 
             if batch % 100 == 0:
                 loss, current = loss.item(), (batch +1)*len(X)
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
 
-def test(dataloader, model, loss_fn):
-    size = len(dataloader.dataset)
-    num_batches = len(dataloader)
-    model.eval()
-    test_loss, correct = 0,0
+    def test_step(self, dataloader, loss_fn =None):
+        self.loss_fn = loss_fn if loss_fn else self.loss_fn
 
-    with torch.no_grad():
-        for X, _ in dataloader:
-            X=X.reshape([-1,N])
+        size = len(dataloader.dataset)
+        num_batches = len(dataloader)
+        self.eval()
+        test_loss, correct = 0,0
 
-            X = X.to(device)
-            out = model(X)
-            test_loss += loss_fn(out, X).item()
+        ###### POTENTIAL DECORATOR FUNCTION
+        with torch.no_grad():
+            for X, _ in dataloader:
+                X=X.reshape([-1,N])
 
-        test_loss /= num_batches
-        print(f"Test Error: \nAvg loss: {test_loss:>8f} \n")
+                X = X.to(device)
+                out = self(X)
+                test_loss += self.loss_fn(out, X).item()
 
-    return X, out
+            test_loss /= num_batches
+            print(f"Test Error: \nAvg loss: {test_loss:>8f} \n")
+
+        return X, out
+
+
+    def train_model(self, train_data_loader, test_data_loader, num_epochs = 5):
+
+        results=[]
+
+        for epoch in range(num_epochs):
+            print( f'Epoch {epoch+1}\n-----------------------------')
+            self.train_step(dataloader=train_data_loader)
+            img, recon = self.test_step(dataloader=test_data_loader)
+            results.append((epoch,img,recon))
+
+        return results
 
 
 def plot_results(num_samples = 9):
@@ -165,20 +189,25 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr =.001, weight_decay =.00001 )
 
 
+    model.load_model(loss_fn, optimizer,  path='./data/20230227211127-autoencoder_checkpoint.pth')
+
+
     # model.load_weights('./data/20230227141826-autoencoder_model_weights.pth')
 
 
     #### Training Loop
 
-    num_epochs = 5
+    num_epochs = 2
+    #
+    # results=[]
+    #
+    # for epoch in range(num_epochs):
+    #     print( f'Epoch {epoch+1}\n-----------------------------')
+    #     model.train_step(dataloader=train_data_loader)
+    #     img, recon = model.test_step(dataloader=test_data_loader)
+    #     results.append((epoch,img,recon))
 
-    results=[]
-
-    for epoch in range(num_epochs):
-        print( f'Epoch {epoch+1}\n-----------------------------')
-        train(train_data_loader, model, loss_fn, optimizer)
-        img, recon = test(test_data_loader, model, loss_fn)
-        results.append((epoch,img,recon))
+    results=model.train_model(train_data_loader, test_data_loader, num_epochs)
 
     ts = datetime.datetime.now().strftime(str_format)
     filepath = f'{data_dir}{ts}-{model.name}_checkpoint.pth'
@@ -188,7 +217,7 @@ if __name__ == '__main__':
     ### Plot Results
 
     figure = []
-    for k in range(0,num_epochs):
+    for k in range(0,len(results)):
 
         figure.append((k,plt.figure()))
         plt.gray()
