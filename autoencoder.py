@@ -14,6 +14,12 @@ n = 28 # pixel nxn
 N = n*n
 
 
+def encoder(func):
+    pass
+
+def decoder(func):
+    pass
+
 
 def default_func(X,Y):
     X=X.reshape([-1,N])
@@ -21,7 +27,7 @@ def default_func(X,Y):
     label = X
     return X,label
 
-
+##Maybe this should be a parent class that all models inheret from
 class Autoencoder(nn.Module):
     def __init__(self, name='autoencoder', epoch = 0):
         #nxn,N 28x28, 784
@@ -29,6 +35,8 @@ class Autoencoder(nn.Module):
 
         self.name = name
         self.epoch  = epoch
+        self.z_mu = None
+        self.z_sigma = None
 
         self.encoder = nn.Sequential(
                                       nn.Linear(N, 128), # N=784 --> 128
@@ -97,7 +105,7 @@ class Autoencoder(nn.Module):
         self.optimizer = optimizer if optimizer else self.optimizer
 
         size = len(dataloader.dataset)
-        ###### POTENTIAL DECORATOR FUNCTION
+
         self.train()
 
         self.epoch += 1
